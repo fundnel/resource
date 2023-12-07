@@ -1,0 +1,87 @@
+name: Upload File to Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release name or version (ie: 1.0.0)'
+        required: true
+        type: string
+      github_token:
+        description: 'GitHub Personal Token'
+        required: true
+        type: string
+      name:
+        description: 'Package name'
+        required: true
+        type: string
+      file:
+        description: 'File to upload'
+        required: true
+        type: string
+      path:
+        description: 'Path to file directory (Optional, as in [path] ie: package/[name]/[path]/[file])'
+        required: false
+        type: string
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: .
+    env:
+      OWNER: "fundnel"
+      REPO: "resource"
+      TOKEN: ${{ inputs.github_token }}
+      VERSION: ${{ inputs.version }}
+      INPUT_PATH: ${{ inputs.path }}
+      NAME: ${{ inputs.name }}
+      FILE: ${{ inputs.file }}
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+    - name: Trigger API to check if Release already exists
+      id: check-release-response 
+      run: |
+        curl -L \
+        -H "Accept: application/vnd.github+json" \
+        -H "Authorization: Bearer ${{ env.TOKEN }}" \
+        -H "X-GitHub-Api-Version: 2022-11-28" \
+        https://api.github.com/repos/${{ env.OWNER }}/${{ env.REPO }}/releases/tags/${{ env.VERSION }} -o check-release-response.json
+        echo "id=$(cat check-release-response.json | jq '.id')" >> $GITHUB_OUTPUT
+    - name: Save ID if exists or generate new Release
+      id: response
+      run: |
+        if [ ${{ steps.check-release-response.outputs.id }} != null ]; then
+          echo "id=${{ steps.check-release-response.outputs.id }}" >> $GITHUB_OUTPUT
+        else
+          curl -L \
+          -X POST \
+          -H "Accept: application/vnd.github+json" \
+          -H "Authorization: Bearer ${{ env.TOKEN }}" \
+          -H "X-GitHub-Api-Version: 2022-11-28" \
+          https://api.github.com/repos/${{ env.OWNER }}/${{ env.REPO }}/releases \
+          -d '{"tag_name":"${{ env.VERSION }}","target_commitish":"main","name":"${{ env.VERSION }}","body":"","draft":false,"prerelease":false,"generate_release_notes":false}' -o response.json
+          echo "id=$(cat response.json | jq '.id')" >> $GITHUB_OUTPUT
+        fi
+    - name: Set file path
+      id: file-path
+      run: |
+        if [ ${{ env.INPUT_PATH }} != '' ]; then
+          echo "final=package/${{ env.NAME }}/${{ env.INPUT_PATH }}" >> $GITHUB_OUTPUT
+        else
+          echo "final=package/${{ env.NAME }}/releases/download/${{ env.VERSION }}" >> $GITHUB_OUTPUT
+        fi
+    - name: Upload file to Release
+      working-directory: ${{ steps.file-path.outputs.final }}
+      run: |
+        curl -L \
+        -X POST \
+        -H "Accept: application/vnd.github+json" \
+        -H "Authorization: Bearer ${{ env.TOKEN }}" \
+        -H "X-GitHub-Api-Version: 2022-11-28" \
+        -H "Content-Type: application/gzip" \
+        "https://uploads.github.com/repos/${{ env.OWNER }}/${{ env.REPO }}/releases/${{ steps.response.outputs.id }}/assets?name=${{ env.FILE }}" \
+        --data-binary "@${{ env.FILE }}"
