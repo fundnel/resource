@@ -7,10 +7,6 @@ on:
         description: 'Release name or version (ie: 1.0.0)'
         required: true
         type: string
-      github_token:
-        description: 'GitHub Personal Token'
-        required: true
-        type: string
       name:
         description: 'Package name'
         required: true
@@ -34,7 +30,7 @@ jobs:
     env:
       OWNER: "fundnel"
       REPO: "resource"
-      TOKEN: ${{ inputs.github_token }}
+      TOKEN: ${{ secrets.TOKEN }}
       VERSION: ${{ inputs.version }}
       INPUT_PATH: ${{ inputs.path }}
       NAME: ${{ inputs.name }}
